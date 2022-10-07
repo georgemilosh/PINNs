@@ -18,8 +18,8 @@ from plotting import newfig, savefig
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.gridspec as gridspec
 
-np.random.seed(1234)
-tf.set_random_seed(1234)
+np.random.seed(12345)
+tf.set_random_seed(12345)
 
 class PhysicsInformedNN:
     # Initialize the class
@@ -50,7 +50,8 @@ class PhysicsInformedNN:
         
         # tf placeholders and graph
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,
-                                                     log_device_placement=True))
+                                                     log_device_placement=False)) #To have aoutput about the graph
+                                                     #log_device_placement=True)) #To have aoutput about the graph
         
         self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]])
         self.y_tf = tf.placeholder(tf.float32, shape=[None, self.y.shape[1]])
@@ -68,8 +69,8 @@ class PhysicsInformedNN:
                     
         self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,  
                                                                 method = 'L-BFGS-B', # see https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html
-                                                                options = {#'maxiter': 50000, # Maximum number of iterations to perform. Depending on the method each iteration may use several function evaluations.
-                                                                           'maxiter': 20,
+                                                                options = {'maxiter': 50000, # Maximum number of iterations to perform. Depending on the method each iteration may use several function evaluations.
+                                                                           #'maxiter': 50,
                                                                            'maxfun': 50000,
                                                                            'maxcor': 50,
                                                                            'maxls': 50,
@@ -77,9 +78,10 @@ class PhysicsInformedNN:
         
         self.optimizer_Adam = tf.train.AdamOptimizer()
         self.train_op_Adam = self.optimizer_Adam.minimize(self.loss)                    
-        
+        self.saver = tf.train.Saver()
         init = tf.global_variables_initializer()
         self.sess.run(init)
+        
 
     def initialize_NN(self, layers):        
         weights = []
@@ -93,13 +95,13 @@ class PhysicsInformedNN:
         return weights, biases
     
     def save_model(self, filename):
-        saver = tf.train.Saver()
-        saver.save(self.sess, filename)
+        #saver = tf.train.Saver()
+        self.saver.save(self.sess, filename)
         
     def load_model(self, filename):
         #First let's load meta graph and restore weights
-        saver = tf.train.import_meta_graph(f'{filename}/model.meta')
-        saver.restore(self.sess,tf.train.latest_checkpoint(f'{filename}/'))
+        #saver = tf.train.import_meta_graph(f'{filename}/model.meta')
+        self.saver.restore(self.sess, filename)
         
     def xavier_init(self, size):
         in_dim = size[0]
@@ -250,7 +252,7 @@ if __name__ == "__main__":
     p = PP.flatten()[:,None] # NT x 1
     
     ######################################################################
-    ######################## Noiseles Data ###############################
+    ######################## Noiseless Data ###############################
     ######################################################################
     # Training Data    
     idx = np.random.choice(N*T, N_train, replace=False)
@@ -262,21 +264,13 @@ if __name__ == "__main__":
     
     with open('log.txt','w') as f:
         # Training
-        modelname = 'NavierStokes'
+        modelname = 'NavierStokes/model'
         model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-        if not os.path.exists(f'{modelname}/model.meta'):
-            model.train(20) #(200000)
-            print('model trained',file=f)
-            model.save_model(f'{modelname}/model')
-            print('model saved')
-            print(f'{model.weights} = {model.weights}',file=f)
-            print(f'{model.weights[0]} = {model.weights[0]}',file=f)
-        else:
-            model.load_model(modelname)
-            print('model loaded',file=f)
-            print(f'{model.weights} = {model.weights}',file=f)
-            print(f'{model.weights[0]} = {model.weights[0]}',file=f)
         
+        print(f"model.session.run('Variable:0') = {model.sess.run('Variable:0')[0]}",file=f)
+        print(f"model.session.run('Variable:0') = {model.sess.run('Variable:0')[0]}")
+        print(f"model.session.run('Variable_16:0') = {model.sess.run('Variable_16:0')[0]}",file=f)
+        print(f"model.session.run('Variable_16:0') = {model.sess.run('Variable_16:0')[0]}")
         # Test Data
         snap = np.array([100])
         x_star = X_star[:,0:1]
@@ -293,8 +287,10 @@ if __name__ == "__main__":
         print(f'u_pred.shape = {u_pred.shape}',file=f)
         lambda_1_value = model.sess.run(model.lambda_1)
         print(f'lambda_1_value = {lambda_1_value}',file=f)
+        print(f'lambda_1_value = {lambda_1_value}')
         lambda_2_value = model.sess.run(model.lambda_2)
         print(f'lambda_2_value = {lambda_2_value}',file=f)
+        print(f'lambda_2_value = {lambda_2_value}')
         # Error
         error_u = np.linalg.norm(u_star-u_pred,2)/np.linalg.norm(u_star,2)
         error_v = np.linalg.norm(v_star-v_pred,2)/np.linalg.norm(v_star,2)
@@ -306,8 +302,74 @@ if __name__ == "__main__":
         print('Error u: %e' % (error_u),file=f)
         print('Error v: %e' % (error_v),file=f)
         print('Error p: %e' % (error_p),file=f)
+        print('Error u: %e' % (error_u))
+        print('Error v: %e' % (error_v))
+        print('Error p: %e' % (error_p))
         print('Error l1: %.5f%%' % (error_lambda_1),file=f)                            
-        print('Error l2: %.5f%%' % (error_lambda_2),file=f)                 
+        print('Error l2: %.5f%%' % (error_lambda_2),file=f)      
+        print('Error l1: %.5f%%' % (error_lambda_1))                            
+        print('Error l2: %.5f%%' % (error_lambda_2)) 
+        
+        if not os.path.exists(f'{modelname}.meta'):
+            model.train(200000) #(50)
+            print('model trained',file=f)
+            print('model trained')
+            model.save_model(modelname)
+            print('model saved')
+            print(f'{model.weights} = {model.weights}',file=f)
+            print(f"model.session.run('Variable:0') = {model.sess.run('Variable:0')[0]}",file=f)
+            print(f"model.session.run('Variable:0') = {model.sess.run('Variable:0')[0]}")
+            print(f"model.session.run('Variable_16:0') = {model.sess.run('Variable_16:0')[0]}",file=f)
+            print(f"model.session.run('Variable_16:0') = {model.sess.run('Variable_16:0')[0]}")
+        else:
+            model.load_model(modelname)
+            print('model loaded',file=f)
+            print(f'{model.weights} = {model.weights}',file=f)
+            print(f"model.session.run('Variable:0') = {model.sess.run('Variable:0')[0]}",file=f)
+            print(f"model.session.run('Variable_16:0') = {model.sess.run('Variable_16:0')[0]}",file=f)
+            print('model loaded')
+            print(f'{model.weights} = {model.weights}')
+            print(f"model.session.run('Variable:0') = {model.sess.run('Variable:0')[0]}")
+            print(f"model.session.run('Variable_16:0') = {model.sess.run('Variable_16:0')[0]}")
+            
+        # Test Data
+        snap = np.array([100])
+        x_star = X_star[:,0:1]
+        y_star = X_star[:,1:2]
+        t_star = TT[:,snap]
+        
+        u_star = U_star[:,0,snap]
+        v_star = U_star[:,1,snap]
+        p_star = P_star[:,snap]
+        
+        print(f'x_star.shape = {x_star.shape}, t_star.shape = {t_star.shape}, u_star.shape = {u_star.shape}',file=f)
+        # Prediction
+        u_pred, v_pred, p_pred = model.predict(x_star, y_star, t_star)
+        print(f'u_pred.shape = {u_pred.shape}',file=f)
+        lambda_1_value = model.sess.run(model.lambda_1)
+        print(f'lambda_1_value = {lambda_1_value}',file=f)
+        print(f'lambda_1_value = {lambda_1_value}')
+        lambda_2_value = model.sess.run(model.lambda_2)
+        print(f'lambda_2_value = {lambda_2_value}',file=f)
+        print(f'lambda_2_value = {lambda_2_value}')
+        # Error
+        error_u = np.linalg.norm(u_star-u_pred,2)/np.linalg.norm(u_star,2)
+        error_v = np.linalg.norm(v_star-v_pred,2)/np.linalg.norm(v_star,2)
+        error_p = np.linalg.norm(p_star-p_pred,2)/np.linalg.norm(p_star,2)
+
+        error_lambda_1 = np.abs(lambda_1_value - 1.0)*100
+        error_lambda_2 = np.abs(lambda_2_value - 0.01)/0.01 * 100
+        
+        print('Error u: %e' % (error_u),file=f)
+        print('Error v: %e' % (error_v),file=f)
+        print('Error p: %e' % (error_p),file=f)
+        print('Error u: %e' % (error_u))
+        print('Error v: %e' % (error_v))
+        print('Error p: %e' % (error_p))
+        print('Error l1: %.5f%%' % (error_lambda_1),file=f)                            
+        print('Error l2: %.5f%%' % (error_lambda_2),file=f)      
+        print('Error l1: %.5f%%' % (error_lambda_1))                            
+        print('Error l2: %.5f%%' % (error_lambda_2))                 
     
     # Plot Results
     #    plot_solution(X_star, u_pred, 1)
@@ -315,6 +377,7 @@ if __name__ == "__main__":
     #    plot_solution(X_star, p_pred, 3)    
     #    plot_solution(X_star, p_star, 4)
     #    plot_solution(X_star, p_star - p_pred, 5)
+
         
         # Predict for plotting
         lb = X_star.min(0)
@@ -338,12 +401,12 @@ if __name__ == "__main__":
         v_train = v_train + noise*np.std(v_train)*np.random.randn(v_train.shape[0], v_train.shape[1])    
 
         # Training
-        modelname2 = 'NavierStokes_noisy'
+        modelname2 = 'NavierStokes_noisy/model'
         model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-        if not os.path.exists(f'{modelname2}/model.meta'):
-            model.train(20)  # model.train(200000)
+        if not os.path.exists(f'{modelname2}.meta'):
+            model.train(200000) # (20)
             print('model trained', file=f)
-            model.save_model(f'{modelname2}/model')
+            model.save_model(modelname2)
             print('model saved', file=f)
             print(f'{model.weights} = {model.weights}',file=f)
             print(f'{model.weights[0]} = {model.weights[0]}',file=f)
@@ -354,11 +417,6 @@ if __name__ == "__main__":
             print(f'{model.weights[0]} = {model.weights[0]}',file=f)
         
         
-        vars = model.trainable_variables
-        print(f'{vars = }', file=f) #some infos about variables...
-        vars_vals = model.sess.run(vars)
-        for var, val in zip(vars, vars_vals):
-            print("var: {}, value: {}".format(var.name, val), file=f) #...or sort it in a list....
         lambda_1_value_noisy = model.sess.run(model.lambda_1)
         print(f'lambda_1_value_noisy = {lambda_1_value_noisy}',file=f)
         lambda_2_value_noisy = model.sess.run(model.lambda_2)
@@ -367,10 +425,10 @@ if __name__ == "__main__":
         error_lambda_2_noisy = np.abs(lambda_2_value_noisy - 0.01)/0.01 * 100
             
         print('Error l1: %.5f%%' % (error_lambda_1_noisy), file=f)                             
-        print('Error l2: %.5f%%' % (error_lambda_2_noisy), file=f)                  
-
-             
-    
+        print('Error l2: %.5f%%' % (error_lambda_2_noisy), file=f)   
+        print('Error l1: %.5f%%' % (error_lambda_1_noisy))                             
+        print('Error l2: %.5f%%' % (error_lambda_2_noisy))               
+        
         ######################################################################
         ############################# Plotting ###############################
         ######################################################################    
@@ -387,6 +445,8 @@ if __name__ == "__main__":
         yy_vort = np.reshape(y_vort, (modes+1,modes+1,nel), order = 'F')
         ww_vort = np.reshape(w_vort, (modes+1,modes+1,nel), order = 'F')
         print(f'ww_vort.shape = {ww_vort.shape}', file=f)
+
+    
     """
     box_lb = np.array([1.0, -2.0])
     box_ub = np.array([8.0, 2.0])
