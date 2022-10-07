@@ -2,7 +2,7 @@
 @author: Maziar Raissi
 """
 
-import sys
+import sys, os
 sys.path.insert(0, '../../Utilities/')
 
 import tensorflow as tf
@@ -66,9 +66,10 @@ class PhysicsInformedNN:
                     tf.reduce_sum(tf.square(self.f_u_pred)) + \
                     tf.reduce_sum(tf.square(self.f_v_pred))
                     
-        self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss, 
-                                                                method = 'L-BFGS-B', 
-                                                                options = {'maxiter': 50000,
+        self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,  
+                                                                method = 'L-BFGS-B', # see https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html
+                                                                options = {#'maxiter': 50000, # Maximum number of iterations to perform. Depending on the method each iteration may use several function evaluations.
+                                                                           'maxiter': 20,
                                                                            'maxfun': 50000,
                                                                            'maxcor': 50,
                                                                            'maxls': 50,
@@ -90,6 +91,15 @@ class PhysicsInformedNN:
             weights.append(W)
             biases.append(b)        
         return weights, biases
+    
+    def save_model(self, filename):
+        saver = tf.train.Saver()
+        saver.save(self.sess, filename)
+        
+    def load_model(self, filename):
+        #First let's load meta graph and restore weights
+        saver = tf.train.import_meta_graph(f'{filename}/model.meta')
+        saver.restore(self.sess,tf.train.latest_checkpoint(f'{filename}/'))
         
     def xavier_init(self, size):
         in_dim = size[0]
@@ -249,99 +259,135 @@ if __name__ == "__main__":
     t_train = t[idx,:]
     u_train = u[idx,:]
     v_train = v[idx,:]
+    
+    with open('log.txt','w') as f:
+        # Training
+        modelname = 'NavierStokes'
+        model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
+        if not os.path.exists(f'{modelname}/model.meta'):
+            model.train(20) #(200000)
+            print('model trained',file=f)
+            model.save_model(f'{modelname}/model')
+            print('model saved')
+            print(f'{model.weights} = {model.weights}',file=f)
+            print(f'{model.weights[0]} = {model.weights[0]}',file=f)
+        else:
+            model.load_model(modelname)
+            print('model loaded',file=f)
+            print(f'{model.weights} = {model.weights}',file=f)
+            print(f'{model.weights[0]} = {model.weights[0]}',file=f)
+        
+        # Test Data
+        snap = np.array([100])
+        x_star = X_star[:,0:1]
+        y_star = X_star[:,1:2]
+        t_star = TT[:,snap]
+        
+        u_star = U_star[:,0,snap]
+        v_star = U_star[:,1,snap]
+        p_star = P_star[:,snap]
+        
+        print(f'x_star.shape = {x_star.shape}, t_star.shape = {t_star.shape}, u_star.shape = {u_star.shape}',file=f)
+        # Prediction
+        u_pred, v_pred, p_pred = model.predict(x_star, y_star, t_star)
+        print(f'u_pred.shape = {u_pred.shape}',file=f)
+        lambda_1_value = model.sess.run(model.lambda_1)
+        print(f'lambda_1_value = {lambda_1_value}',file=f)
+        lambda_2_value = model.sess.run(model.lambda_2)
+        print(f'lambda_2_value = {lambda_2_value}',file=f)
+        # Error
+        error_u = np.linalg.norm(u_star-u_pred,2)/np.linalg.norm(u_star,2)
+        error_v = np.linalg.norm(v_star-v_pred,2)/np.linalg.norm(v_star,2)
+        error_p = np.linalg.norm(p_star-p_pred,2)/np.linalg.norm(p_star,2)
 
-    # Training
-    model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-    model.train(200000)
-    
-    # Test Data
-    snap = np.array([100])
-    x_star = X_star[:,0:1]
-    y_star = X_star[:,1:2]
-    t_star = TT[:,snap]
-    
-    u_star = U_star[:,0,snap]
-    v_star = U_star[:,1,snap]
-    p_star = P_star[:,snap]
-    
-    # Prediction
-    u_pred, v_pred, p_pred = model.predict(x_star, y_star, t_star)
-    lambda_1_value = model.sess.run(model.lambda_1)
-    lambda_2_value = model.sess.run(model.lambda_2)
-    
-    # Error
-    error_u = np.linalg.norm(u_star-u_pred,2)/np.linalg.norm(u_star,2)
-    error_v = np.linalg.norm(v_star-v_pred,2)/np.linalg.norm(v_star,2)
-    error_p = np.linalg.norm(p_star-p_pred,2)/np.linalg.norm(p_star,2)
-
-    error_lambda_1 = np.abs(lambda_1_value - 1.0)*100
-    error_lambda_2 = np.abs(lambda_2_value - 0.01)/0.01 * 100
-    
-    print('Error u: %e' % (error_u))    
-    print('Error v: %e' % (error_v))    
-    print('Error p: %e' % (error_p))    
-    print('Error l1: %.5f%%' % (error_lambda_1))                             
-    print('Error l2: %.5f%%' % (error_lambda_2))                  
+        error_lambda_1 = np.abs(lambda_1_value - 1.0)*100
+        error_lambda_2 = np.abs(lambda_2_value - 0.01)/0.01 * 100
+        
+        print('Error u: %e' % (error_u),file=f)
+        print('Error v: %e' % (error_v),file=f)
+        print('Error p: %e' % (error_p),file=f)
+        print('Error l1: %.5f%%' % (error_lambda_1),file=f)                            
+        print('Error l2: %.5f%%' % (error_lambda_2),file=f)                 
     
     # Plot Results
-#    plot_solution(X_star, u_pred, 1)
-#    plot_solution(X_star, v_pred, 2)
-#    plot_solution(X_star, p_pred, 3)    
-#    plot_solution(X_star, p_star, 4)
-#    plot_solution(X_star, p_star - p_pred, 5)
+    #    plot_solution(X_star, u_pred, 1)
+    #    plot_solution(X_star, v_pred, 2)
+    #    plot_solution(X_star, p_pred, 3)    
+    #    plot_solution(X_star, p_star, 4)
+    #    plot_solution(X_star, p_star - p_pred, 5)
+        
+        # Predict for plotting
+        lb = X_star.min(0)
+        ub = X_star.max(0)
+        nn = 200
+        x = np.linspace(lb[0], ub[0], nn)
+        y = np.linspace(lb[1], ub[1], nn)
+        X, Y = np.meshgrid(x,y)
+        
+        UU_star = griddata(X_star, u_pred.flatten(), (X, Y), method='cubic')
+        VV_star = griddata(X_star, v_pred.flatten(), (X, Y), method='cubic')
+        PP_star = griddata(X_star, p_pred.flatten(), (X, Y), method='cubic')
+        P_exact = griddata(X_star, p_star.flatten(), (X, Y), method='cubic')
+        print('UU_star.shape = {UU_star.shape}',file=f)
     
-    # Predict for plotting
-    lb = X_star.min(0)
-    ub = X_star.max(0)
-    nn = 200
-    x = np.linspace(lb[0], ub[0], nn)
-    y = np.linspace(lb[1], ub[1], nn)
-    X, Y = np.meshgrid(x,y)
-    
-    UU_star = griddata(X_star, u_pred.flatten(), (X, Y), method='cubic')
-    VV_star = griddata(X_star, v_pred.flatten(), (X, Y), method='cubic')
-    PP_star = griddata(X_star, p_pred.flatten(), (X, Y), method='cubic')
-    P_exact = griddata(X_star, p_star.flatten(), (X, Y), method='cubic')
-    
-    
-    ######################################################################
-    ########################### Noisy Data ###############################
-    ######################################################################
-    noise = 0.01        
-    u_train = u_train + noise*np.std(u_train)*np.random.randn(u_train.shape[0], u_train.shape[1])
-    v_train = v_train + noise*np.std(v_train)*np.random.randn(v_train.shape[0], v_train.shape[1])    
+        ######################################################################
+        ########################### Noisy Data ###############################
+        ######################################################################
+        noise = 0.01        
+        u_train = u_train + noise*np.std(u_train)*np.random.randn(u_train.shape[0], u_train.shape[1])
+        v_train = v_train + noise*np.std(v_train)*np.random.randn(v_train.shape[0], v_train.shape[1])    
 
-    # Training
-    model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
-    model.train(200000)
+        # Training
+        modelname2 = 'NavierStokes_noisy'
+        model = PhysicsInformedNN(x_train, y_train, t_train, u_train, v_train, layers)
+        if not os.path.exists(f'{modelname2}/model.meta'):
+            model.train(20)  # model.train(200000)
+            print('model trained', file=f)
+            model.save_model(f'{modelname2}/model')
+            print('model saved', file=f)
+            print(f'{model.weights} = {model.weights}',file=f)
+            print(f'{model.weights[0]} = {model.weights[0]}',file=f)
+        else:
+            model.load_model(modelname2)
+            print('model loaded',file=f)
+            print(f'{model.weights} = {model.weights}',file=f)
+            print(f'{model.weights[0]} = {model.weights[0]}',file=f)
         
-    lambda_1_value_noisy = model.sess.run(model.lambda_1)
-    lambda_2_value_noisy = model.sess.run(model.lambda_2)
-      
-    error_lambda_1_noisy = np.abs(lambda_1_value_noisy - 1.0)*100
-    error_lambda_2_noisy = np.abs(lambda_2_value_noisy - 0.01)/0.01 * 100
         
-    print('Error l1: %.5f%%' % (error_lambda_1_noisy))                             
-    print('Error l2: %.5f%%' % (error_lambda_2_noisy))     
+        vars = model.trainable_variables
+        print(f'{vars = }', file=f) #some infos about variables...
+        vars_vals = model.sess.run(vars)
+        for var, val in zip(vars, vars_vals):
+            print("var: {}, value: {}".format(var.name, val), file=f) #...or sort it in a list....
+        lambda_1_value_noisy = model.sess.run(model.lambda_1)
+        print(f'lambda_1_value_noisy = {lambda_1_value_noisy}',file=f)
+        lambda_2_value_noisy = model.sess.run(model.lambda_2)
+        print(f'lambda_2_value_noisy = {lambda_2_value_noisy}',file=f)
+        error_lambda_1_noisy = np.abs(lambda_1_value_noisy - 1.0)*100
+        error_lambda_2_noisy = np.abs(lambda_2_value_noisy - 0.01)/0.01 * 100
+            
+        print('Error l1: %.5f%%' % (error_lambda_1_noisy), file=f)                             
+        print('Error l2: %.5f%%' % (error_lambda_2_noisy), file=f)                  
 
              
     
-    ######################################################################
-    ############################# Plotting ###############################
-    ######################################################################    
-     # Load Data
-    data_vort = scipy.io.loadmat('../Data/cylinder_nektar_t0_vorticity.mat')
-           
-    x_vort = data_vort['x'] 
-    y_vort = data_vort['y'] 
-    w_vort = data_vort['w'] 
-    modes = np.asscalar(data_vort['modes'])
-    nel = np.asscalar(data_vort['nel'])    
-    
-    xx_vort = np.reshape(x_vort, (modes+1,modes+1,nel), order = 'F')
-    yy_vort = np.reshape(y_vort, (modes+1,modes+1,nel), order = 'F')
-    ww_vort = np.reshape(w_vort, (modes+1,modes+1,nel), order = 'F')
-    
+        ######################################################################
+        ############################# Plotting ###############################
+        ######################################################################    
+        # Load Data
+        data_vort = scipy.io.loadmat('../Data/cylinder_nektar_t0_vorticity.mat')
+        print('data_vort loaded', file=f)
+        x_vort = data_vort['x'] 
+        y_vort = data_vort['y'] 
+        w_vort = data_vort['w'] 
+        modes = np.asscalar(data_vort['modes'])
+        nel = np.asscalar(data_vort['nel'])    
+        
+        xx_vort = np.reshape(x_vort, (modes+1,modes+1,nel), order = 'F')
+        yy_vort = np.reshape(y_vort, (modes+1,modes+1,nel), order = 'F')
+        ww_vort = np.reshape(w_vort, (modes+1,modes+1,nel), order = 'F')
+        print(f'ww_vort.shape = {ww_vort.shape}', file=f)
+    """
     box_lb = np.array([1.0, -2.0])
     box_ub = np.array([8.0, 2.0])
     
@@ -490,3 +536,4 @@ if __name__ == "__main__":
     
     # savefig('./figures/NavierStokes_prediction') 
 
+"""
