@@ -1,4 +1,4 @@
-* Note, the repo is using an outdated version of tensorflow
+* Note, the repo is using an outdated version of tensorflow (tensorflow 1)
 
 # [Physics Informed Neural Networks](https://maziarraissi.github.io/PINNs/)
 
